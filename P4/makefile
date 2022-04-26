@@ -27,25 +27,25 @@ OBJS_4 = $(SRCS_4:.c=.o)
 all: $(OUTPUT_1) $(OUTPUT_2) $(OUTPUT_3) $(OUTPUT_4) clean
 
 # Regla 2
-# Creamos el ejecutable de p3_1
+# Creamos el ejecutable de productor_FIFO
 # $@ es el nombre del archivo que se está generando, $< es el primer prerrequisito
 $(OUTPUT_1): $(OBJS_1) 
 	$(CC) -o $@ $< $(INCLUDE_RE)
 
 
 # Regla 3
-# Creamos el ejecutable de p3_2_v1
+# Creamos el ejecutable de consumidor_FIFO
 $(OUTPUT_2): $(OBJS_2) 
 	$(CC) -o $@ $< $(INCLUDE_RE) 
 
 # Regla 4
-# Creamos el ejecutable de p3_2_v2
+# Creamos el ejecutable de productor_LIFO
 $(OUTPUT_3): $(OBJS_3) 
 	$(CC) -o $@ $< $(INCLUDE_RE) 
 	
 
 # Regla 4
-# Creamos el ejecutable de p3_2_v2
+# Creamos el ejecutable de consumidor_LIFO
 $(OUTPUT_4): $(OBJS_4) 
 	$(CC) -o $@ $< $(INCLUDE_RE) 	
 
