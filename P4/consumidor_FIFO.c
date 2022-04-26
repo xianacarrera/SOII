@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <mqueue.h>
+#include <unistd.h>
+#include <time.h>
 
 /* Xiana Carrera Alonso
  * Sistemas Operativos II
@@ -8,44 +10,39 @@
  *
  * Este programa implementa una solución al problema del productor-consumidor empleando el mecanismo de pase de
  * mensajes.
- * En particular, este codigo corresponde al consumidor en una version en la que el consumidor retira los items del 
- * buffer en orden First-In-First-Out. 
- * 
+ * En particular, este codigo corresponde al consumidor en una version en la que el consumidor retira los items del
+ * buffer en orden First-In-First-Out.
+ *
  * Para compilar se debe usar la opción -lrt.
  * El productor debe comezar a ejecutarse antes del consumidor.
  */
 
+// Colores para impresión por consola
+#define AZUL "\033[0;34m"
+#define ROJO "\033[0;31m"
+#define RESET "\033[0m"
 
 #define MAX_BUFFER 5                         // Tamaño del buffer
-#define DATOS_A_CONSUMIR 100                 // Número de datos a producir/consumir
+#define DATOS_A_CONSUMIR 50                  // Número de datos a producir/consumir
+#define MAX_SLEEP 3                          // Duración máxima de un sleep
 
 
 mqd_t buz_ordenes;                   // Cola de entrada de mensajes para el productor
 mqd_t buz_items;                     // Cola de entrada de mensajes para el consumidor
 
-size_t tam_msg;                      // Tamaño de cada mensaje 
+size_t tam_msg;                      // Tamaño de cada mensaje
 
 char historial_buzon[DATOS_A_CONSUMIR];   // Historial de mensajes recibidos
 
-void consumir_item(char item, int iter);        // Funcion de consumicion de mensajes
-void consumidor();                       // Función que implementa el consumidor
-void imprimir_historial_buzon();         // Función para la impresión del historial
+void consumir_item(char item, int iter);        // Funcion de consumición de mensajes
+void consumidor();                              // Función que implementa el consumidor
+void imprimir_historial_buzon();                // Función para la impresión del historial
+long num_elementos_buzon(char buffer);          // Función para la comprobación del vaciado y llenado de buffers
 
-long buzon_tiene_elementos(char buffer){
-    struct mq_attr attr;
-
-    switch(buffer){
-        case 'P':
-            mq_getattr(buz_ordenes, &attr);
-            return attr.mq_curmsgs; 
-        case 'C':
-            mq_getattr(buz_items, &attr);
-            return attr.mq_curmsgs; 
-    }
-    return -1;
-}
 
 int main() {
+    srand(time(NULL));              // Semilla para la generación de números aleatorios
+
     tam_msg = sizeof(char);         // Cada mensaje contendrá un carácter
 
     // Se abren los buffers de recepción del productor y del consumidor, respectivamente.ç
@@ -55,7 +52,7 @@ int main() {
 
     if ((buz_ordenes == -1) || (buz_items == -1)) {     // Error en la apertura de algún buffer
         perror("No se ha podido abrir los buffers del programa");
-        exit(EXIT_FAILURE);    
+        exit(EXIT_FAILURE);
     }
 
     consumidor();                 // Bucle principal del consumidor
@@ -69,44 +66,31 @@ int main() {
     exit(EXIT_SUCCESS);
 }
 
-/* Función con la que se consumen (se imprimen) los mensajes recibidos. 
+/* Función con la que se consumen (se imprimen) los mensajes recibidos.
  * Se imprime su contenido y la iteración actual, y se guarda una referencia en el historial para uso posterior.
  * @param item: mensaje recibido.
  * @param iter: iteración actual.
  */
 void consumir_item(char item, int iter){
+    long nelem;                       // Número de elementos presentes en el buzón
+
+    sleep(rand() % MAX_SLEEP);      // Espera aleatoria de 0, 1 o 2 segundos para forzar vaciado y llenado
+    if ((nelem = num_elementos_buzon('C')) == 0) printf("%sCola del consumidor vacía%s\n", AZUL, RESET);
+    else if (nelem == MAX_BUFFER) printf("%sCola del consumidor llena%s\n", ROJO, RESET);
+
     printf("[ITER %02d] Consumido item %c\n", iter, item);            // Imprime el mensaje recibido
     historial_buzon[iter] = item;    // Guarda una referencia en el historial de mensajes
 }
 
-/* Función que muestra todos los mensajes recibidos por el consumidor a lo largo del programa, para facilitar la
- * comprobación de la validez del resultado. 
- */
-void imprimir_historial_buzon(){
-    int i, j;
-
-    // Se imprime el historial en líneas de 10 mensajes
-    for (i = 0; i < DATOS_A_CONSUMIR; i += 10){
-        printf("ITER -> ");         // Título de la línea (iteración)
-        // En la condicion de finalizacion se comprueba que j no alcance el tamaño del historial
-        for (j = i; j < i + 10 && j < DATOS_A_CONSUMIR; j++) printf("%02d ", j);
-        
-        printf("\nITEM -> ");       // Contenido de la línea (mensaje)
-        for (j = i; j < i + 10 && j < DATOS_A_CONSUMIR; j++) printf(" %c ", historial_buzon[j]);
-        
-        printf("\n\n");
-    }
-}
-
 /*
- * Función principal del consumidor. 
+ * Función principal del consumidor.
  * En primer lugar, llena el buffer del productor enviando MAX_BUFFER mensajes.
  * Luego, entra en un bucle de procesado de mensajes de DATOS_A_CONSUMIR iteraciones.
  */
 void consumidor() {
-    // Item vacío. Con él, el consumidor indica al productor que está preparado para recibir un nuevo mensaje
-    char item = ' ';    
+    char item = ' ';            // Item para el envío de datos
     int i;          // Variable de iteración
+    long nelem;     // Número de elementos presentes en la cola
 
     /* Se envían MAX_BUFFER mensajes al buffer buz_ordenes (buffer de lectura del productor).
      * Los argumentos de la función mq_send son:
@@ -114,22 +98,26 @@ void consumidor() {
      * - Puntero al mensaje
      * - Tamaño del mensaje
      * - Prioridad del mensaje
-     * El consumidor siempre usará prioridad 0 en sus mensajes (ya que el contenido es irrelevante: son mensajes vacíos 
+     * El consumidor siempre usará prioridad 0 en sus mensajes (ya que el contenido es irrelevante: son mensajes
      * que únicamente sirven de indicación al productor de que hay espacio en buz_items).
      */
     for (i = 0; i < MAX_BUFFER; i++) mq_send(buz_ordenes, &item, tam_msg, 0);
     printf("Ordenes enviadas. Se ha llenado el buffer del productor\n");
 
     // En cada iteración del bucle principal, se recibe un mensaje enviado por el productor, se le devuelve el item
-    // vacío (como señal de que hay hueco en el buffer del consumidor para más items) y se procesa el mensaje recibido.
+    // (como señal de que hay hueco en el buffer del consumidor para más items) y se procesa el mensaje recibido.
     for (i = 0; i < DATOS_A_CONSUMIR; i++){
+        if ((nelem = num_elementos_buzon('C')) == 0) printf("%sCola del consumidor vacia%s\n", AZUL, RESET);
+        else if (nelem == MAX_BUFFER) printf("%sCola del consumidor llena%s\n", ROJO, RESET);
+
         // Con mq_receive se retira el mensaje más antiguo de buz_items (pues el productor tampoco usa prioridades),
         // y se almacena en item. El tamaño es el mismo que el de los mensajes enviado por el consumidor.
         // La prioridad del mensaje recibido se guardaría en el cuarto argumento. La ignoramos (NULL).
         // Si no hay mensajes, el consumidor se bloquea hasta que llege uno o lo despierte una señal.
         mq_receive(buz_items, &item, tam_msg, NULL);
         printf("[ITER %02d] Recibido item\n", i);       // Se notifica la recepción
-        mq_send(buz_ordenes, &item, tam_msg, 0);        // Se devuelve el item vacío al productor
+        mq_send(buz_ordenes, &item, tam_msg, 0);        // Se devuelve el item al productor
+        // El contenido del item no se modifica porque igualmente, el productor no lo leerá
         printf("[ITER %02d] Enviada petición de un nuevo item\n", i);
         consumir_item(item, i);         // Se imprime el mensaje y se guarda en un historial
     }
@@ -140,9 +128,48 @@ void consumidor() {
     printf("Finalizados envios y recepciones. Cola de items consumidos:\n");
     imprimir_historial_buzon();
 
-    if (buzon_tiene_elementos('C')) printf("\n\nLa cola de entrada del consumidor no esta vacia\n\n");
-    while (buzon_tiene_elementos('C')){
+    // El consumidor se asegura de que su buffer de recepción quede vacío
+    if (num_elementos_buzon('C')) printf("\n\nLa cola de entrada del consumidor no esta vacia\n\n");
+    while (num_elementos_buzon('C')){
         mq_receive(buz_items, &item, tam_msg, NULL);
         printf("Recogido item de la cola de entrada del consumidor\n");
     }
+    printf("Buffer de entrada del consumidor vacio\n\n");
+}
+
+/* Función que muestra todos los mensajes recibidos por el consumidor a lo largo del programa, para facilitar la
+ * comprobación de la validez del resultado.
+ */
+void imprimir_historial_buzon(){
+    int i, j;
+
+    // Se imprime el historial en líneas de 10 mensajes
+    for (i = 0; i < DATOS_A_CONSUMIR; i += 10){
+        printf("ITER -> ");         // Título de la línea (iteración)
+        // En la condicion de finalizacion se comprueba que j no alcance el tamaño del historial
+        for (j = i; j < i + 10 && j < DATOS_A_CONSUMIR; j++) printf("%02d ", j);
+
+        printf("\nITEM -> ");       // Contenido de la línea (mensaje)
+        for (j = i; j < i + 10 && j < DATOS_A_CONSUMIR; j++) printf(" %c ", historial_buzon[j]);
+
+        printf("\n\n");
+    }
+}
+
+/* Función que comprueba el número de elementos presentes en un buzón.
+ * @param buffer 'P' para analizar buz_ordenes, 'C' para analizar buz_items.
+ * @return El número de items del buzón indicado o -1 en caso de entrada no definida.
+ */
+long num_elementos_buzon(char buffer){
+    struct mq_attr attr;    // Estructura para almacenar la configuración de la cola de mensajes
+
+    switch(buffer){
+        case 'P':
+            mq_getattr(buz_ordenes, &attr);     // Se leen los atributos de buz_ordenes
+            return attr.mq_curmsgs;             // Se accede al número de mensajes actuales
+        case 'C':
+            mq_getattr(buz_items, &attr);
+            return attr.mq_curmsgs;
+    }
+    return -1;
 }
