@@ -34,6 +34,21 @@ char consumiciones[DATOS_A_CONSUMIR];           // Historial de mensajes consumi
 int prioridades[DATOS_A_CONSUMIR];              // Historial de la prioridad asociada a cada mensaje consumido
 
 
+long buzon_tiene_elementos(char buffer){
+    struct mq_attr attr;
+
+    switch(buffer){
+        case 'P':
+            mq_getattr(buz_ordenes, &attr);
+            return attr.mq_curmsgs; 
+        case 'C':
+            mq_getattr(buz_items, &attr);
+            return attr.mq_curmsgs; 
+    }
+    return -1;
+}
+
+
 /* Función con la que se consumen (se imprimen) los mensajes recibidos. 
  * Se imprime su contenido y la iteración actual, y se guarda una referencia en el historial para uso posterior.
  * @param item: mensaje recibido.
@@ -41,7 +56,7 @@ int prioridades[DATOS_A_CONSUMIR];              // Historial de la prioridad aso
  * @param prioridad: prioridad asociada al mensaje.
  */
 void consumir_item(char item, int iter, int prio){
-    printf("[ITER %02d] Recibido item %c con prioridad %d\n", iter, item, prio);
+    printf("[ITER %02d] Consumido item %c con prioridad %d\n", iter, item, prio);
     consumiciones[iter] = item;         // Se guarda el contenido del mensaje
     prioridades[iter] = prio;           // Se guarda la prioridad asociada al mensaje
 }
@@ -53,7 +68,7 @@ void consumir_item(char item, int iter, int prio){
  * - Azul: prioridad menor que el item anterior
  * - Rojo: prioridad mayor que el item anterior
  */
-void imprimir_consumiciones(){
+void imprimir_historial_buzon(){
     int i, j;
     char * color;
 
@@ -116,39 +131,46 @@ void consumidor() {
          */
         mq_receive(buz_items, &item, tam_msg, &prio);
         printf("[ITER %02d] Recibido item\n", i);
-        mq_send(buz_ordenes, &item, tam_msg, 0);   // Se devuelve el item vacío al productor
+        mq_send(buz_ordenes, &item, tam_msg, 0);   // Se devuelve el item al productor
+        // El contenido del item no se modifica porque es irrelevante. El productor no lo leerá
         printf("[ITER %02d] Enviada petición de un nuevo item\n", i);
-        consumir_item(item, i, prio);
+        consumir_item(item, i, prio);               // Se imprime el mensaje y se guarda en un historial      
     }
 
     printf("\n\n\n");
-    printf("Finalizados envíos y recepciones. Items consumidos:\n");
-    imprimir_consumiciones();
+
+    // Al acabar, el consumidor imprime todo el historial de mensajes en orden.
+    printf("Finalizados envios y recepciones. Cola de items consumidos:\n");
+    imprimir_historial_buzon();
+
+    if (buzon_tiene_elementos('C')) printf("\n\nLa cola de entrada del consumidor no esta vacia\n\n");
+    while (buzon_tiene_elementos('C')){
+        mq_receive(buz_items, &item, tam_msg, NULL);
+        printf("Recogido item de la cola de entrada del consumidor\n");
+    }
 }
 
 
-
-
-    //printf("   ITER    |  ITEM |\n");
-    //for (i = 0; i < DATOS_A_CONSUMIR; i++) printf("    %02d  -> |   %c   |\n", i, consumiciones[i]);
-
-
-
 int main() {
-    tam_msg = sizeof(char);
+    tam_msg = sizeof(char);         // Cada mensaje contendrá un carácter
 
-    /* Apertura de los buffers */
-    buz_ordenes = mq_open("/BUZON_ORDENES", O_WRONLY);
-    buz_items = mq_open("/BUZON_ITEMS", O_RDONLY);
+    // Se abren los buffers de recepción del productor y del consumidor, respectivamente.ç
+    // Ambos fueron previamente creados por el productor.
+    buz_ordenes = mq_open("/BUZON_ORDENES", O_WRONLY);      // En el buffer de ordenes, el consumidor solo escribe.
+    buz_items = mq_open("/BUZON_ITEMS", O_RDONLY);          // En el buffer de ordenes, el consumidor solo lee.
 
-    if ((buz_ordenes == -1) || (buz_items == -1)) {
-        perror ("mq_open");
-        exit(EXIT_FAILURE);
+    if ((buz_ordenes == -1) || (buz_items == -1)) {     // Error en la apertura de algún buffer
+        perror("No se ha podido abrir los buffers del programa");
+        exit(EXIT_FAILURE);    
     }
 
-    consumidor();
-    mq_close(buz_ordenes);
-    mq_close(buz_items);
+    consumidor();                 // Bucle principal del consumidor
+
+    // El consumidor cierra ambos buzones (el productor los cierra y elimina)
+    if (mq_close(buz_ordenes) || mq_close(buz_items)){
+        perror("Error al cerrar los buffers del programa");
+        exit(EXIT_FAILURE);
+    }
 
     exit(EXIT_SUCCESS);
 }

@@ -9,7 +9,7 @@
  * Este programa implementa una solución al problema del productor-consumidor empleando el mecanismo de pase de
  * mensajes.
  * En particular, este codigo corresponde al consumidor en una version en la que el consumidor retira los items del 
- * buffer en orden Firt-In-First-Out. 
+ * buffer en orden First-In-First-Out. 
  * 
  * Para compilar se debe usar la opción -lrt.
  * El productor debe comezar a ejecutarse antes del consumidor.
@@ -25,18 +25,31 @@ mqd_t buz_items;                     // Cola de entrada de mensajes para el cons
 
 size_t tam_msg;                      // Tamaño de cada mensaje 
 
-char cola_final[DATOS_A_CONSUMIR];   // Historial de mensajes recibidos
+char historial_buzon[DATOS_A_CONSUMIR];   // Historial de mensajes recibidos
 
 void consumir_item(char item, int iter);        // Funcion de consumicion de mensajes
-void consumidor();                   // Función que implementa el consumidor
+void consumidor();                       // Función que implementa el consumidor
+void imprimir_historial_buzon();         // Función para la impresión del historial
 
-void imprimir_cola_final();         // Función para la impresión del historial
+long buzon_tiene_elementos(char buffer){
+    struct mq_attr attr;
 
+    switch(buffer){
+        case 'P':
+            mq_getattr(buz_ordenes, &attr);
+            return attr.mq_curmsgs; 
+        case 'C':
+            mq_getattr(buz_items, &attr);
+            return attr.mq_curmsgs; 
+    }
+    return -1;
+}
 
 int main() {
     tam_msg = sizeof(char);         // Cada mensaje contendrá un carácter
 
-    // Se abren los buffers de recepción del productor y del consumidor, respectivamente.
+    // Se abren los buffers de recepción del productor y del consumidor, respectivamente.ç
+    // Ambos fueron previamente creados por el productor.
     buz_ordenes = mq_open("/BUZON_ORDENES", O_WRONLY);      // En el buffer de ordenes, el consumidor solo escribe.
     buz_items = mq_open("/BUZON_ITEMS", O_RDONLY);          // En el buffer de ordenes, el consumidor solo lee.
 
@@ -47,6 +60,7 @@ int main() {
 
     consumidor();                 // Bucle principal del consumidor
 
+    // El consumidor cierra los buzones para sí mismo
     if (mq_close(buz_ordenes) || mq_close(buz_items)){
         perror("Error al cerrar los buffers del programa");
         exit(EXIT_FAILURE);
@@ -61,14 +75,14 @@ int main() {
  * @param iter: iteración actual.
  */
 void consumir_item(char item, int iter){
-    printf("[ITER %02d] Leido item recibido: %c\n", iter, item);            // Imprime el mensaje recibido
-    cola_final[iter] = item;    // Guarda una referencia en el historial de mensajes
+    printf("[ITER %02d] Consumido item %c\n", iter, item);            // Imprime el mensaje recibido
+    historial_buzon[iter] = item;    // Guarda una referencia en el historial de mensajes
 }
 
 /* Función que muestra todos los mensajes recibidos por el consumidor a lo largo del programa, para facilitar la
  * comprobación de la validez del resultado. 
  */
-void imprimir_cola_final(){
+void imprimir_historial_buzon(){
     int i, j;
 
     // Se imprime el historial en líneas de 10 mensajes
@@ -78,7 +92,7 @@ void imprimir_cola_final(){
         for (j = i; j < i + 10 && j < DATOS_A_CONSUMIR; j++) printf("%02d ", j);
         
         printf("\nITEM -> ");       // Contenido de la línea (mensaje)
-        for (j = i; j < i + 10 && j < DATOS_A_CONSUMIR; j++) printf(" %c ", cola_final[j]);
+        for (j = i; j < i + 10 && j < DATOS_A_CONSUMIR; j++) printf(" %c ", historial_buzon[j]);
         
         printf("\n\n");
     }
@@ -121,7 +135,14 @@ void consumidor() {
     }
 
     printf("\n\n\n");
+
     // Al acabar, el consumidor imprime todo el historial de mensajes en orden.
-    printf("Finalizados envíos y recepciones. Cola de items consumidos:\n");
-    imprimir_cola_final();
+    printf("Finalizados envios y recepciones. Cola de items consumidos:\n");
+    imprimir_historial_buzon();
+
+    if (buzon_tiene_elementos('C')) printf("\n\nLa cola de entrada del consumidor no esta vacia\n\n");
+    while (buzon_tiene_elementos('C')){
+        mq_receive(buz_items, &item, tam_msg, NULL);
+        printf("Recogido item de la cola de entrada del consumidor\n");
+    }
 }
