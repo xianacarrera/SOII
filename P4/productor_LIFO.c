@@ -172,7 +172,7 @@ void productor(void) {
     printf("\n\n\n");
 
     // Al acabar, el productor imprime todo el historial de mensajes en orden.
-    printf("Finalizados envíos y recepciones. Cola de items producidos:\n");
+    printf("Finalizados envíos y recepciones. Lista de items producidos:\n");
     imprimir_historial_buzon();
 
     // El productor se asegura de que su buffer de recepción quede vacío

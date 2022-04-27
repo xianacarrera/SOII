@@ -170,7 +170,7 @@ void consumidor() {
     printf("\n\n\n");
 
     // Al acabar, el consumidor imprime todo el historial de mensajes en orden.
-    printf("Finalizados envios y recepciones. Cola de items consumidos:\n");
+    printf("Finalizados envios y recepciones. Lista de items consumidos:\n");
     imprimir_historial_buzon();
 
     // El consumidor se asegura de que su buffer de recepción quede vacío
