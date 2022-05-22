@@ -94,6 +94,8 @@ int main(){
     if ((estado = (int *) malloc(N * sizeof(int))) == NULL)
         salir_con_error("No se ha podido reservar memoria para el estado de los filosofos\n", 0);
 
+    // Inicialmente todos los filósofos están pensando
+    for (i = 0; i < N; i++) estado[i] = PENSANDO;
 
     printf("\n");
     printf("Estados posibles para los filósofos:\n");
@@ -154,7 +156,7 @@ void filosofo(int id){
 
 
 /*
- * El filósofo comprueba si puede comer. Si puede, lo hace. Si no, se bloquea hasta que pueda.
+ * Se comprueba si el filósofo de número id puede comer. Si puede, lo hace. Si no, se bloquea hasta que pueda.
  */
 void probar(int id){
     /*

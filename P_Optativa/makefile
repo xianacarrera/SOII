@@ -2,6 +2,8 @@
 CC = gcc -Wall
 # Opción de compilación -pthread
 INCLUDE_PTHREAD = -pthread
+# Opción de compilación para la librería Realtime Extensions
+INCLUDE_RE = -lrt
 
 # Ficheros fuente para los 4 ejercicios
 SRCS_1 = filosofos1.c
@@ -38,9 +40,10 @@ $(OUTPUT_2): $(OBJS_2)
 	$(CC) -o $@ $< $(INCLUDE_PTHREAD)
 
 # Regla 3
-# Creamos el ejecutable de filosofos3.c
+# Creamos el ejecutable de filosofos3.c. Como usa colas de mensajes, incluimos la librería
+# Realtime Extensions.
 $(OUTPUT_3): $(OBJS_3) 
-	$(CC) -o $@ $< $(INCLUDE_PTHREAD)
+	$(CC) -o $@ $< $(INCLUDE_PTHREAD) $(INCLUDE_RE)
 
 # Regla 4
 # Creamos el ejecutable de filosofos4.c

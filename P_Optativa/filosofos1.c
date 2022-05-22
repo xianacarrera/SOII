@@ -103,6 +103,9 @@ int main(){
     if ((estado = (int *) malloc(N * sizeof(int))) == NULL)
         salir_con_error("No se ha podido reservar memoria para el estado de los filosofos\n", 0);
     
+    // Inicialmente todos los filósofos están pensando
+    for (i = 0; i < N; i++) estado[i] = PENSANDO;    
+
     printf("\n");
     printf("Estados posibles para los filósofos:\n");
     printf("  P: Pensando\n");
@@ -158,13 +161,17 @@ void * filosofo(void * ptr_id){
 
 
 /*
- * El filósofo comprueba si puede comer. Si puede, lo hace. Si no, se bloquea hasta que pueda.
+ * Se comprueba si el filósofo de número id puede comer. Si puede, lo hace. Si no, se bloquea hasta que pueda.
  */
 void probar(int id){
     /*
-     * Se comprueba que el filósofo esté hambriento (que implica que no está comiendo, en cuyo caso ya tendría los tenedores, y que quiere comer) y que ni el filósofo de su izquierda está comiendo ni el de su derecha (por lo que sus tenedores están libres).
+     * Se comprueba que el filósofo esté hambriento (que implica que no está comiendo, en cuyo caso ya tendría los 
+     * tenedores, y que quiere comer) y que ni el filósofo de su izquierda está comiendo ni el de su derecha (por lo que 
+     * sus tenedores están libres).
      *
-     * Es importante verificar que el estado del hilo sea HAMBRIENTO porque puede que sea alguno de sus vecinos quien esté llamando a esta función. Si no se verificara, los vecinos tendrían la capacidad de obligarle a comer cuando en realidad él aún no quiere.
+     * Es importante verificar que el estado del hilo sea HAMBRIENTO porque puede que sea alguno de sus vecinos quien esté 
+     * llamando a esta función. Si no se verificara, los vecinos tendrían la capacidad de obligarle a comer cuando en realidad 
+     * él aún no quiere.
      */
     if (estado[id] == HAMBRIENTO && estado[IZQUIERDO] != COMIENDO && estado[DERECHO] != COMIENDO){
         estado[id] = COMIENDO;      // El filósofo ya no deja que ninguno de sus vecinos tome sus tenedores.
