@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <pthread.h>
-#include <semaphore.h>
+#include <mqueue.h>
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
@@ -47,7 +47,7 @@ int * estado;            // Estado de cada filósofo (pensando, hambriento o com
 sem_t * mutex = NULL;    // Semáforo que da acceso exclusivo a la región crítica (donde se toman o liberan los tenedores)
 sem_t ** s;              // Cada filósofo tiene un semáforo
 
-
+pthread_t * filosofos;   // Identificadores de los hilos filósofos. Son manejados por el camarero
 
 void * camarero(void * arg){
     int i;
@@ -65,7 +65,6 @@ void * camarero(void * arg){
 
 int main(){
     int i;
-    pthread_t * filosofos;
     pthread_t camarero;
 
     printf("Introduce el numero de filosofos ó -1 para salir ");    
@@ -276,6 +275,52 @@ void unirse_a_hilo(pthread_t hilo){
     }
 }
 
+/*
+ * Función auxiliar que destruye las colas de mensajes que se utilizan a lo largo del programa.
+ * El camarero tiene una única cola de recepción, a la que envian mensajes todos los filósofos.
+ * Cada filósofo tiene su propia cola de recepción, a la que envia mensajes el camarero. 
+ */
+void destruir_colas(){
+    char * nombre_buz;          // Cadena con el nombre de una cola
+    int i;                      // Variable de iteración
+    
+    // Destruimos la cola de recepción del camarero
+    mq_unlink("/BUZON_CAMARERO");
+
+    /* Destruimos las colas de los filósofos, que tienen como nombre /BUZON_F1, /BUZON_F2, ..., 
+     * /BUZON_FN, donde N es el número de filósofos (asumimos N < 1000).
+     * Construimos una cadena para cada nombre de buzón.
+     */
+    nombre_buz = (char *) malloc(11 * sizeof(char));
+    snprintf(nombre_buz, 9, "/BUZON_F");
+    for (i = 0; i < N; i++){
+        // Añadimos a nombre_buz el identificador del filósofo (a los sumo 3 caracteres 
+        // terminados en el carácter nulo)
+        snprintf(&nombre_buz[8], 4, "%d", i);       
+
+        // Destruimos la cola
+        mq_unlink(nombre_buz);
+    }
+
+
+    // Liberamos la cadena
+    free(nombre_buz);
+}
+
+/*
+ * Función auxiliar que inicializa las colas de mensajes que se usarán durante el programa. 
+ * El camarero tendrá una única cola de recepción, a la que enviarán mensajes todos los filósofos.
+ * Cada filósofo tendrá su propia cola de recepción, a la que enviará mensajes el camarero. 
+ */
+void crear_colas(){
+    struct mq_attr attr;            // Atributos de las colas
+
+    // Creamos la cola del camarero. Se conceden todos los permisos (777) y se utiliza la configuración
+    // establecida a través de attr.
+    mq_unlink("/BUZON_CAMARERO");
+
+
+}
 
 /*
  * Función que crea los semáforos que se emplearán a lo largo del programa.
@@ -302,6 +347,10 @@ void crear_semaforos(){
         if((s[i] = sem_open(nombre_sem, O_CREAT, 0700, 0)) == SEM_FAILED)
             salir_con_error("Error no se ha podido crear el semaforo de un filosofo", 1);   
     }
+
+
+    // Liberamos la cadena
+    free(nombre_sem);
 }
 
 /*

@@ -31,7 +31,7 @@
 #define HAMBRIENTO 1
 #define COMIENDO 2      
 
-
+// Control de la consola
 #define COLOR "\033[0;%dm"          // String que permite cambiar el color de la consola
 #define RESET "\033[0m"             // Reset del color de la consola
 #define MOVER_A_COL "\r\033[64C"    // Mueve el cursor de la consola a la columna 64
@@ -115,6 +115,10 @@ int main(){
     cerrar_semaforos();
     destruir_semaforos();       // También los destruye para eliminarlos del sistema (pues sabe que
     // ya no queda nadie más usándolos)
+
+    // Liberamos la memoria reservada
+    free(s);
+    free(estado);
 
     printf("\n\nEjecución finalizada. Cerrando programa...\n\n");
 
@@ -306,6 +310,9 @@ void crear_semaforos(){
         if((s[i] = sem_open(nombre_sem, O_CREAT, 0700, 0)) == SEM_FAILED)
             salir_con_error("Error no se ha podido crear el semaforo de un filosofo", 1);   
     }
+
+    // Liberamos la cadena
+    free(nombre_sem);
 }
 
 /*
@@ -330,6 +337,9 @@ void destruir_semaforos(){
         if((exit_unlink = sem_unlink(nombre_sem)) && errno != ENOENT)
             salir_con_error("Error: permisos inadecuados para el semaforo", 1);   
     }
+
+    // Liberamos la cadena
+    free(nombre_sem);
 }
 
 /*
@@ -351,6 +361,9 @@ void abrir_semaforos(){
         snprintf(&nombre_sem[3], 4, "%d", i);
         sem_open(nombre_sem, 0); 
     }
+
+    // Liberamos la cadena
+    free(nombre_sem);
 }
 
 /*
@@ -370,6 +383,9 @@ void cerrar_semaforos(){
     for (i = 0; i < N; i++){
         if (sem_close(s[i])) salir_con_error("Error: no se ha podido cerrar el semaforo", 1);
     }
+
+    // Liberamos la cadena
+    free(nombre_sem);
 }
 
 

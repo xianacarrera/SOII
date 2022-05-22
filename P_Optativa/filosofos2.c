@@ -32,7 +32,7 @@
 #define HAMBRIENTO 1
 #define COMIENDO 2      
 
-
+// Control de la consola
 #define COLOR "\033[0;%dm"          // String que permite cambiar el color de la consola
 #define RESET "\033[0m"             // Reset del color de la consola
 #define MOVER_A_COL "\r\033[64C"    // Mueve el cursor de la consola a la columna 64
@@ -117,6 +117,11 @@ int main(){
 
     // Se destruye el mutex y las variables de condicion
     destruir_mutex_varcon();
+
+    // Liberamos la memoria reservada
+    free(hilos);
+    free(conds);
+    free(estado);
 
     printf("\n\nEjecución finalizada. Cerrando programa...\n\n");
     
