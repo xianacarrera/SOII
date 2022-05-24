@@ -15,6 +15,19 @@
  * Este programa implementa una solución al problema de los filósofos 
  * emplando semáforos como mecanismo de sincronización.
  * 
+ * Se consideran N filósofos (donde N se solicita al usuario), representados
+ * cada uno por un hilo, que alternan entre períodos en los que comen y piensan.
+ * Para comer, deben adquirir un tenedor izquierdo y un tenedor derecho, cada
+ * uno de los cuales comparten con el vecino de ese mismo lado. Un tenedor no
+ * puede estar en posesión de más de un filósofo a la vez, y cada filósofo
+ * deja sus tenedores cuando termina de comer.
+ * 
+ * La región crítica de este programa son los puntos de intercambio tenedores,
+ * esto es, donde se dejan o toman de la mesa y donde se ceden a algún vecino.
+ * 
+ * La resolución con semáforos muestra ser eficiente y evitar carreras críticas,
+ * al no haber inconsistencias en los cambios de estado de los hilos.
+ * 
  * Se debe compilar con la opción -pthread.
  */
 
@@ -45,7 +58,8 @@ sem_t * mutex = NULL;    // Semáforo que da acceso exclusivo a la región crít
 sem_t ** s;              // Cada filósofo tiene un semáforo
 
 
-// Funciones principales
+// Funciones principalesón de números aleatorios
+
 void * filosofo(void * ptr_id);
 void probar(int id);
 void tomar_tenedores(int id);
@@ -91,7 +105,8 @@ int main(){
     }
 
     srand(time(NULL));              // Semilla para la generación de números aleatorios
-
+    // Emplearemos esperas aleatorias para representar los períodos en los que los filósofos
+    // comen y piensan.
 
     // Reservamos memoria para el array de filósofos
     if ((hilos = (pthread_t *) malloc(N * sizeof(pthread_t))) == NULL)
@@ -161,7 +176,8 @@ void * filosofo(void * ptr_id){
 
 
 /*
- * Se comprueba si el filósofo de número id puede comer. Si puede, lo hace. Si no, se bloquea hasta que pueda.
+ * Se comprueba si el filósofo de número id quiere y puede comer. Si es así, lo hace. Si no, la función 
+ * tomar_tenedores() lo obligará a esperar.
  */
 void probar(int id){
     /*
@@ -188,7 +204,8 @@ void tomar_tenedores(int id){
     estado[id] = HAMBRIENTO;  // Registra que quiere tomar los tenedores
     probar(id);             // Comprueba si el filósofo puede comer (él está hambriento y sus vecinos no están comiendo, es decir, tienen libres los tenedores)
     sem_post(mutex);        // Sale de la región crítica
-    sem_wait(s[id]);        // Si el filósofo puede comer (al probar, ha comprobado que los tenedores están disponibles y se ha declarado como "COMIENDO"), su semáforo se habrá incrementado. Si no, seguirá a 0 y quedará bloqueado.
+    sem_wait(s[id]);        // Si el filósofo puede comer (al probar, ha comprobado que los tenedores están disponibles y se ha declarado como "COMIENDO"), su 
+    // semáforo se habrá incrementado. Si no, seguirá a 0 y quedará bloqueado.
 }
 
 /*
@@ -198,7 +215,8 @@ void poner_tenedores(int id){
     sem_wait(mutex);           // El filósofo trata de acceder a la región crítica. Queda bloqueado si ya hay alguien cogiendo/dejando tenedores.
     log_consola(id, "Va a dejar sus tenedores");
     estado[id] = PENSANDO;    // El filósofo está ocioso. No está comiendo ni quiere tomar tenedores.
-    probar(IZQUIERDO);      // Si el filósofo de la izquierda quiere comer y su tenedor izquierdo está libre, se le cede el tenedor derecho y se le permite comer (deja de esperar su turno).
+    probar(IZQUIERDO);      // Si el filósofo de la izquierda quiere comer y su tenedor izquierdo está libre, se le cede el tenedor derecho 
+    // y se le permite comer (deja de esperar su turno).
     if (estado[IZQUIERDO] == COMIENDO) log_consola(id, "Cede un tenedor al vecino izquierdo y este come");
     probar(DERECHO);        // Análogo con con el filósofo de la derecha.
     if (estado[DERECHO] == COMIENDO) log_consola(id, "Cede un tenedor al vecino derecho y este come");
@@ -225,11 +243,13 @@ void comer(int id){
  * al estado de cada filósofo en el momento actual de ejecución.
  */
 void log_consola(int id, char * msg) {
-    // Si el id es menor que 16, se usan los colores originales de la consola. Si no, se dan saltos de 24 en función del id (para dar más variedad a los colores de ids próximos). El total debe estar en módulo 256.
-    int color = (id > 15)? ((id % 15) + (id / 24)) % 256  : id;
+    // Empleamos los colores rojo, verde, amarillo, azul, magenta o fucsia según el id del hilo (31-36)
+    int color = 31 + id % 6;
+    char * estados = ver_estados();         // Estados de los filósofos
 
     // Con la macro MOVER_A_COL nos colocamos en una columna a la derecha para imprimir los estados de los filósofos
-    printf(COLOR "[%d]: %s" MOVER_A_COL "%s" RESET "\n", color, id, msg, ver_estados());
+    printf(COLOR "[%d]: %s" MOVER_A_COL "%s" RESET "\n", color, id, msg, estados);
+    free(estados);
 }
 
 /*
@@ -278,12 +298,20 @@ void crear_hilo(pthread_t * hilo, int i){
  * identificador se pasa como argumento.
  */
 void unirse_a_hilo(pthread_t hilo){
-    int error;
-    char * exit_hilo;
+    int error;              // Comprobación de errores
+    char * exit_hilo;       // Mensaje de finalización del hilo a esperar
 
+    // El hilo en ejecución se enlaza al pasado como argumento. Cuando este finalice, se guardará el mensaje que haya
+    // pasado a través de pthread_exit en exit_hilo
     if ((error = pthread_join(hilo, (void **) &exit_hilo)) != 0){
-            fprintf(stderr, "Error %d al unirse a un hilo: %s\n", error, strerror(error));
-            exit(EXIT_FAILURE);
+        fprintf(stderr, "Error %s al esperar por un hilo", strerror(error));
+        exit(EXIT_FAILURE);
+    }
+
+    // Si el mensaje de finalización no es "Hilo finalizado correctamente", tuvo lugar algún problema
+    if (strcmp(exit_hilo, "Hilo finalizado correctamente")){
+        fprintf(stderr, "Error: finalización incorrecta o inesperada de un hilo");
+        exit(EXIT_FAILURE);
     }
 }
 

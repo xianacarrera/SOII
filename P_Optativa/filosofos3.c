@@ -7,22 +7,38 @@
 #include <string.h>
 #include <fcntl.h>
 
-// TODO: cerrar semáforos al salir
-// FINALIZAR HILOS
+/* Xiana Carrera Alonso
+ * Sistemas Operativos II
+ * Práctica Optativa - Problema de los filósofos con paso de mensajes
+ *
+ * Se consideran N filósofos (donde N se solicita al usuario), representados
+ * cada uno por un hilo, que alternan entre períodos en los que comen y piensan.
+ * Para comer, deben adquirir un tenedor izquierdo y un tenedor derecho, cada
+ * uno de los cuales comparten con el vecino de ese mismo lado. Un tenedor no
+ * puede estar en posesión de más de un filósofo a la vez, y cada filósofo
+ * deja sus tenedores cuando termina de comer.
+ * 
+ * La región crítica de este programa son los puntos de intercambio tenedores,
+ * esto es, donde se dejan o toman de la mesa y donde se ceden a algún vecino.
+ * 
+ * 
+ * 
+ * En esta versión se implementa una solución emplando paso de mensajes 
+ * aprovechando el carácter bloqueante asociado a la lectura de las colas de
+ * recepción cuando no tienen mensajes.
+ * 
+ * Se empleará una cola global, a la que todos los filósofos tendrán acceso,
+ * para representar un mutex de acceso a la región crítica. Asimismo,
+ * cada filósofo tendrá una cola individual que lo dejará bloqueado
+ * cuando no pueda tomar sus tenedores y a través de la cual otros hilos
+ * podrán despertarlo (enviándole un mensaje y liberándolo del bloqueo
+ * asociado a la lectura de la cola de recepción) para indicarle que 
+ * puede continuar su ejecución.
+ * 
+ * Se debe compilar con la opción -pthread y -lrt.
+ */
 
-// Es una cola FIFO -> no hay prioridades
 
-
-
-/*
-Buscar TAD de cola en C para los mensajes
-https://www.dsi.fceia.unr.edu.ar/downloads/filosofos.pdf
-http://www.cse.chalmers.se/edu/year/2016/course/TDA383_LP3/files/lectures/Lecture09-synchronization_messages.pdf
-
-Usar la versión con camarero
-*/
-
-// Opciones -pthread y -lrt
 
 #define MAX_ITER 10                 // Número de iteraciones máximas del programa
 #define MAX_SLEEP 3                 // Número máximo de segundos que puede durar un sleep
@@ -53,7 +69,9 @@ mqd_t cola_rc;           // Esta cola representa un mutex sobre la región crít
         // cola, si no hay mensajes, quedará bloqueado (mutex tomado). Si hay un 
         // mensaje, significará que la región crítica está libre y podrá avanzar.
 
-size_t tam_msg;          // Tamaño de cada mensaje
+// Todas las colas almacenarán, a lo sumo, un mensaje
+
+size_t tam_msg;          // Tamaño de cada mensaje (emplearemos caracteres)
 
 
 // Funciones principales
@@ -177,7 +195,8 @@ void * filosofo(void * ptr_id){
 
 
 /*
- * Se comprueba si el filósofo de número id puede comer. Si puede, lo hace. Si no, se bloquea hasta que pueda.
+ * Se comprueba si el filósofo de número id quiere y puede comer. Si es así, lo hace. Si no, la función 
+ * tomar_tenedores() lo obligará a esperar.
  */
 void probar(int id){
     char msg = '_';             // Mensaje que se le enviará al filósofo id si puede comer, para desbloquearlo
@@ -284,13 +303,13 @@ void comer(int id){
  * al estado de cada filósofo en el momento actual de ejecución.
  */
 void log_consola(int id, char * msg) {
-    // Si el id es menor que 16, se usan los colores originales de la consola. Si no, se dan saltos de 24 en función del id (para dar más variedad a los colores de ids próximos). El total debe estar en módulo 256.
-    int color = (id > 15)? ((id % 15) + (id / 24)) % 256  : id;
-
-    color = 32 + id % 3;
+    // Empleamos los colores rojo, verde, amarillo, azul, magenta o fucsia según el id del hilo (31-36)
+    int color = 31 + id % 6;
+    char * estados = ver_estados();         // Estados de los filósofos
 
     // Con la macro MOVER_A_COL nos colocamos en una columna a la derecha para imprimir los estados de los filósofos
-    printf(COLOR "[%d]: %s" MOVER_A_COL "%s" RESET "\n", color, id, msg, ver_estados());
+    printf(COLOR "[%d]: %s" MOVER_A_COL "%s" RESET "\n", color, id, msg, estados);
+    free(estados);
 }
 
 /*
@@ -343,12 +362,19 @@ void crear_hilo(pthread_t * hilo, int i){
  * Esta función se ejecuta para los N filósofos.
  */
 void unirse_a_hilo(pthread_t hilo){
-    char * exit_hilo;          // Mensaje de e
-    int error;
+    int error;              // Comprobación de errores
+    char * exit_hilo;       // Mensaje de finalización del hilo a esperar
 
-
+    // El hilo en ejecución se enlaza al pasado como argumento. Cuando este finalice, se guardará el mensaje que haya
+    // pasado a través de pthread_exit en exit_hilo
     if ((error = pthread_join(hilo, (void **) &exit_hilo)) != 0){
-        fprintf(stderr, "Error %d al unirse a un hilo: %s\n", error, strerror(error));
+        fprintf(stderr, "Error %s al esperar por un hilo", strerror(error));
+        exit(EXIT_FAILURE);
+    }
+
+    // Si el mensaje de finalización no es "Hilo finalizado correctamente", tuvo lugar algún problema
+    if (strcmp(exit_hilo, "Hilo finalizado correctamente")){
+        fprintf(stderr, "Error: finalización incorrecta o inesperada de un hilo");
         exit(EXIT_FAILURE);
     }
 }

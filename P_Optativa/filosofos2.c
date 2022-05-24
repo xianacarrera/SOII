@@ -12,8 +12,24 @@
  * Práctica Optativa - Problema de los filósofos con mutexes y variables
  * de condición.
  *
- * Este programa implementa una solución al problema de los filósofos 
- * emplando semáforos como mecanismo de sincronización.
+ * 
+ * Se consideran N filósofos (donde N se solicita al usuario), representados
+ * cada uno por un hilo, que alternan entre períodos en los que comen y piensan.
+ * Para comer, deben adquirir un tenedor izquierdo y un tenedor derecho, cada
+ * uno de los cuales comparten con el vecino de ese mismo lado. Un tenedor no
+ * puede estar en posesión de más de un filósofo a la vez, y cada filósofo
+ * deja sus tenedores cuando termina de comer.
+ * 
+ * La región crítica de este programa son los puntos de intercambio tenedores,
+ * esto es, donde se dejan o toman de la mesa y donde se ceden a algún vecino.
+ * 
+ * En esta versión se implementa una solución emplando mutexes y variables de 
+ * condición como mecanismo de sincronización.
+ * 
+ * Para ello, se sustituye el semáforo de acceso a la región crítica por un
+ * mutex, y la espera relacionada con la comprobación de que los tenedores
+ * de un filósofo estén disponibles por el bloqueo asociado a una variable
+ * de condición.
  * 
  * Se debe compilar con la opción -pthread.
  */
@@ -88,7 +104,10 @@ int main(){
         }
     }
 
+
     srand(time(NULL));              // Semilla para la generación de números aleatorios
+    // Emplearemos esperas aleatorias para representar los períodos en los que los filósofos
+    // comen y piensan.
 
     // Reservamos memoria para el arary de filósofos
     if ((hilos = (pthread_t *) malloc(N * sizeof(pthread_t))) == NULL)
@@ -160,18 +179,24 @@ void * filosofo(void * ptr_id){
 
 
 /*
- * Se comprueba si el filósofo de número id puede comer. Si puede, lo hace. Si no, se bloquea hasta que pueda.
+ * Se comprueba si el filósofo de número id quiere y puede comer. Si es así, lo hace. Si no, la función 
+ * tomar_tenedores() lo obligará a esperar.
  */
 void probar(int id){
     /*
-     * Se comprueba que el filósofo esté hambriento (que implica que no está comiendo, en cuyo caso ya tendría los tenedores, y que quiere comer) y que ni el filósofo de su izquierda está comiendo ni el de su derecha (por lo que sus tenedores están libres).
+     * Se comprueba que el filósofo esté hambriento (que implica que no está comiendo, en cuyo caso ya tendría 
+     * los tenedores, y que quiere comer) y que ni el filósofo de su izquierda está comiendo ni el de su derecha 
+     * (por lo que sus tenedores están libres).
      *
-     * Es importante verificar que el estado del hilo sea HAMBRIENTO porque puede que sea alguno de sus vecinos quien esté llamando a esta función. Si no se verificara, los vecinos tendrían la capacidad de obligarle a comer cuando en realidad él aún no quiere.
+     * Es importante verificar que el estado del hilo sea HAMBRIENTO porque puede que sea alguno de sus vecinos 
+     * quien esté llamando a esta función. Si no se verificara, los vecinos tendrían la capacidad de obligarle a 
+     * comer cuando en realidad él aún no quiere.
      */
     if (estado[id] == HAMBRIENTO && estado[IZQUIERDO] != COMIENDO && estado[DERECHO] != COMIENDO){
         estado[id] = COMIENDO;      // El filósofo ya no deja que ninguno de sus vecinos tome sus tenedores.
         pthread_cond_signal(&conds[id]);    // El filósofo que ha llamado a esta función señala a su vecino para que
-        // salga del bloqueo de la variable de condición, si estaba en él (al no haber estado los tenedores libres cuando llamó a probar), y comience a comer.
+        // salga del bloqueo de la variable de condición, si estaba en él (al no haber estado los tenedores libres 
+        // cuando llamó a probar), y comience a comer.
     }
 }
 
@@ -180,10 +205,12 @@ void probar(int id){
  * El filósofo trata de tomar los tenedores de su izquierda y de su derecha. Si no puede, se bloquea hasta que pueda.
  */
 void tomar_tenedores(int id){
-    pthread_mutex_lock(&mutex);       // El filósofo trata de acceder a la región crítica. Queda bloqueado si ya hay alguien cogiendo/dejando tenedores (es decir, si el mutex ya está tomado).
+    pthread_mutex_lock(&mutex);       // El filósofo trata de acceder a la región crítica. Queda bloqueado si ya hay 
+    // alguien cogiendo/dejando tenedores (es decir, si el mutex ya está tomado).
     log_consola(id, "Quiere tomar tenedores");
     estado[id] = HAMBRIENTO;  // Registra que quiere tomar los tenedores
-    probar(id);             // Comprueba si el filósofo puede comer (él está hambriento y sus vecinos no están comiendo, es decir, tienen libres los tenedores)
+    probar(id);             // Comprueba si el filósofo puede comer (él está hambriento y sus vecinos no están 
+    // comiendo, es decir, tienen libres los tenedores)
 
     /* A diferencia del caso de los semáforos, esta comprobación debe realizarse desde dentro de la región crítica,
      * porque está asociada al mutex de la misma, y debe ser liberado en caso de que el filósofo pueda continuar.
@@ -191,8 +218,6 @@ void tomar_tenedores(int id){
      * solo incrementarlo (de HAMBRIENTO a COMIENDO).   
      */
     if (estado[id] != COMIENDO){        // Al probar, el filósofo ha visto que alguno de sus tenedores están bloqueados
-        // need to already have the lock before calling this
-        // release the lock, so that other threads can use shared data
         pthread_cond_wait(&conds[id], &mutex);
     }
 
@@ -203,10 +228,12 @@ void tomar_tenedores(int id){
  * Tras comer, el filósofo deja sus tenedores en la mesa, dejándoselos disponibles a sus vecinos.
  */
 void poner_tenedores(int id){
-    pthread_mutex_lock(&mutex);           // El filósofo trata de acceder a la región crítica. Queda bloqueado si ya hay alguien cogiendo/dejando tenedores.
+    pthread_mutex_lock(&mutex);           // El filósofo trata de acceder a la región crítica. Queda bloqueado si 
+    // ya hay alguien cogiendo/dejando tenedores.
     log_consola(id, "Va a dejar sus tenedores");
     estado[id] = PENSANDO;    // El filósofo está ocioso. No está comiendo ni quiere tomar tenedores.
-    probar(IZQUIERDO);      // Si el filósofo de la izquierda quiere comer y su tenedor izquierdo está libre, se le cede el tenedor derecho y se le permite comer (deja de esperar su turno).
+    probar(IZQUIERDO);      // Si el filósofo de la izquierda quiere comer y su tenedor izquierdo está libre, se 
+    // le cede el tenedor derecho y se le permite comer (deja de esperar su turno).
     if (estado[IZQUIERDO] == COMIENDO) log_consola(id, "Cede un tenedor al vecino izquierdo y este come");
     probar(DERECHO);        // Análog_consolao con el filósofo de la derecha.
     if (estado[DERECHO] == COMIENDO) log_consola(id, "Cede un tenedor al vecino derecho y este come");
@@ -258,11 +285,13 @@ char * ver_estados(){
  * al estado de cada filósofo en el momento actual de ejecución.
  */
 void log_consola(int id, char * msg) {
-    // Si el id es menor que 16, se usan los colores originales de la consola. Si no, se dan saltos de 24 en función del id (para dar más variedad a los colores de ids próximos). El total debe estar en módulo 256.
-    int color = (id > 15)? ((id % 15) + (id / 24)) % 256  : id;
+    // Empleamos los colores rojo, verde, amarillo, azul, magenta o fucsia según el id del hilo (31-36)
+    int color = 31 + id % 6;
+    char * estados = ver_estados();         // Estados de los filósofos
 
     // Con la macro MOVER_A_COL nos colocamos en una columna a la derecha para imprimir los estados de los filósofos
-    printf(COLOR "[%d]: %s" MOVER_A_COL "%s" RESET "\n", color, id, msg, ver_estados());
+    printf(COLOR "[%d]: %s" MOVER_A_COL "%s" RESET "\n", color, id, msg, estados);
+    free(estados);
 }
 
 
@@ -290,12 +319,20 @@ void crear_hilo(pthread_t * hilo, int i){
  * identificador se pasa como argumento.
  */
 void unirse_a_hilo(pthread_t hilo){
-    int error;
-    char * exit_hilo;
+    int error;              // Comprobación de errores
+    char * exit_hilo;       // Mensaje de finalización del hilo a esperar
 
+    // El hilo en ejecución se enlaza al pasado como argumento. Cuando este finalice, se guardará el mensaje que haya
+    // pasado a través de pthread_exit en exit_hilo
     if ((error = pthread_join(hilo, (void **) &exit_hilo)) != 0){
-            fprintf(stderr, "Error %d al unirse a un hilo: %s\n", error, strerror(error));
-            exit(EXIT_FAILURE);
+        fprintf(stderr, "Error %s al esperar por un hilo", strerror(error));
+        exit(EXIT_FAILURE);
+    }
+
+    // Si el mensaje de finalización no es "Hilo finalizado correctamente", tuvo lugar algún problema
+    if (strcmp(exit_hilo, "Hilo finalizado correctamente")){
+        fprintf(stderr, "Error: finalización incorrecta o inesperada de un hilo");
+        exit(EXIT_FAILURE);
     }
 }
 

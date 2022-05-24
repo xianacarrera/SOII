@@ -6,6 +6,8 @@
 #include <string.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <sys/mman.h>
+#include <time.h>
 
 
 
@@ -13,8 +15,29 @@
  * Sistemas Operativos II
  * Práctica Optativa - Problema de los filósofos con procesos
  *
+ * 
+ * Se consideran N filósofos (donde N se solicita al usuario), representados
+ * cada uno por un hilo, que alternan entre períodos en los que comen y piensan.
+ * Para comer, deben adquirir un tenedor izquierdo y un tenedor derecho, cada
+ * uno de los cuales comparten con el vecino de ese mismo lado. Un tenedor no
+ * puede estar en posesión de más de un filósofo a la vez, y cada filósofo
+ * deja sus tenedores cuando termina de comer.
+ * 
+ * La región crítica de este programa son los puntos de intercambio tenedores,
+ * esto es, donde se dejan o toman de la mesa y donde se ceden a algún vecino.
+ * 
+ * 
  * Este programa implementa una solución al problema de los filósofos 
- * emplando procesos en lugar de hilos. Se realiza a modo de variante sobre el ejercicio 1 (problema de los filósofos con semáforos).
+ * emplando procesos en lugar de hilos. Se realiza a modo de variante sobre el ejercicio 1 
+ * (problema de los filósofos con semáforos).
+ * 
+ * Los cambios a realizar son mínimos. Únicamente varía la creación y finalización de los filósofos,
+ * que pasa a ser la propia de procesos en lugar de hilos. Además, el array que lleva los estados
+ * de los filósofos se implementa como una región de memoria compartida, para posibilitar el envío
+ * de información entre procesos (con hilos, era una variable a la que todos podían acceder y 
+ * modificar). No es necesario hacer lo mismo para los semáforos, pues es el propio sistema
+ * operativo quien se encarga de las sincronizaciones necesarias.
+ * 
  */
 
 
@@ -67,6 +90,7 @@ void salir_con_error(char * mensaje, int ver_errno);
 
 
 int main(){
+    void * area_compartida = NULL;      // Puntero al área de memoria compartida entre procesos
     int i;              // Variable de iteración
 
     // Se solicita al usuario el número de filósofos (N)
@@ -87,12 +111,24 @@ int main(){
     }
 
 
+    srand(time(NULL));              // Semilla para la generación de números aleatorios
+    // Emplearemos esperas aleatorias para representar los períodos en los que los filósofos
+    // comen y piensan.
+
     // Se reserva memoria para el semáforo individual a cada filósofo
     if ((s = (sem_t **) malloc(N * sizeof(sem_t *))) == NULL)
         salir_con_error("No se ha podido reservar memoria para los semaforos\n", 0);
-    // Reservamos memoria para el array de estados
-    if ((estado = (int *) malloc(N * sizeof(int))) == NULL)
-        salir_con_error("No se ha podido reservar memoria para el estado de los filosofos\n", 0);
+
+
+    // Reservamos una región de memoria compartida entre procesos. Tendrá N enteros, y será equivalente
+    // al array de estados que utilizábamos en otros ejercicios.
+    if ((area_compartida = mmap(NULL, (size_t) N * sizeof(int), PROT_READ | PROT_WRITE,
+        MAP_SHARED | MAP_ANONYMOUS, -1, (off_t) 0)) == MAP_FAILED)
+        // Si hay algún error, finalizamos la ejecución e imprimimos errno con un mensaje personalizado
+        salir_con_error("Error: no se ha podido reservar un área de memoria compartida", 1);
+
+    estado = (int *) area_compartida;       // Guardamos una referencia como memoria con enteros
+    // Podremos acceder a las posiciones del array como se haría normalmente con punteros
 
     // Inicialmente todos los filósofos están pensando
     for (i = 0; i < N; i++) estado[i] = PENSANDO;
@@ -120,7 +156,10 @@ int main(){
 
     // Liberamos la memoria reservada
     free(s);
-    free(estado);
+
+    // Cerramos el área de memoria compartida
+    if (munmap(area_compartida, (size_t) N * sizeof(int)) == -1)
+        salir_con_error("Error: no se ha podido cerrar la proyección del área compartida entre los procesos", 1);
 
     printf("\n\nEjecución finalizada. Cerrando programa...\n\n");
 
@@ -156,13 +195,16 @@ void filosofo(int id){
 
 
 /*
- * Se comprueba si el filósofo de número id puede comer. Si puede, lo hace. Si no, se bloquea hasta que pueda.
+ * Se comprueba si el filósofo de número id quiere y puede comer. Si es así, lo hace. Si no, la función 
+ * tomar_tenedores() lo obligará a esperar.
  */
 void probar(int id){
     /*
-     * Se comprueba que el filósofo esté hambriento (que implica que no está comiendo, en cuyo caso ya tendría los tenedores, y que quiere comer) y que ni el filósofo de su izquierda está comiendo ni el de su derecha (por lo que sus tenedores están libres).
+     * Se comprueba que el filósofo esté hambriento (que implica que no está comiendo, en cuyo caso ya tendría los tenedores, y que quiere comer) y 
+     * que ni el filósofo de su izquierda está comiendo ni el de su derecha (por lo que sus tenedores están libres).
      *
-     * Es importante verificar que el estado del hilo sea HAMBRIENTO porque puede que sea alguno de sus vecinos quien esté llamando a esta función. Si no se verificara, los vecinos tendrían la capacidad de obligarle a comer cuando en realidad él aún no quiere.
+     * Es importante verificar que el estado del hilo sea HAMBRIENTO porque puede que sea alguno de sus vecinos quien esté 
+     * llamando a esta función. Si no se verificara, los vecinos tendrían la capacidad de obligarle a comer cuando en realidad él aún no quiere.
      */
     if (estado[id] == HAMBRIENTO && estado[IZQUIERDO] != COMIENDO && estado[DERECHO] != COMIENDO){
         estado[id] = COMIENDO;      // El filósofo ya no deja que ninguno de sus vecinos tome sus tenedores.
@@ -215,11 +257,13 @@ void comer(int id){
  * al estado de cada filósofo en el momento actual de ejecución.
  */
 void log_consola(int id, char * msg) {
-    // Si el id es menor que 16, se usan los colores originales de la consola. Si no, se dan saltos de 24 en función del id (para dar más variedad a los colores de ids próximos). El total debe estar en módulo 256.
-    int color = (id > 15)? ((id % 15) + (id / 24)) % 256  : id;
+    // Empleamos los colores rojo, verde, amarillo, azul, magenta o fucsia según el id del hilo (31-36)
+    int color = 31 + id % 6;
+    char * estados = ver_estados();         // Estados de los filósofos
 
     // Con la macro MOVER_A_COL nos colocamos en una columna a la derecha para imprimir los estados de los filósofos
-    printf(COLOR "[%d]: %s" MOVER_A_COL "%s" RESET "\n", color, id, msg, ver_estados());
+    printf(COLOR "[%d]: %s" MOVER_A_COL "%s" RESET "\n", color, id, msg, estados);
+    free(estados);
 }
 
 /*
